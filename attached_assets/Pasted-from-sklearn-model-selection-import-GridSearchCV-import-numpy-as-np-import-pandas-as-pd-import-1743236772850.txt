@@ -1,0 +1,392 @@
+from sklearn.model_selection import GridSearchCV
+import numpy as np  
+import pandas as pd 
+import matplotlib.pyplot as plt
+import seaborn as sns
+import folium
+from folium.plugins import MarkerCluster
+from folium.plugins import HeatMap
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import classification_report, accuracy_score
+from geopy.geocoders import Nominatim
+from time import sleep
+
+# Load the dataset
+df = pd.read_csv('C:/Users/matha/OneDrive/Desktop/geoguard/flood_risk_dataset_india.csv')
+
+# Print first few rows
+print("Original Dataset Preview:")
+print(df.head())
+print("\nDataset Info:")
+print(df.info())
+print("\nMissing Values:")
+print(df.isnull().sum())
+
+# Encode categorical variables
+df_encoded = pd.get_dummies(df, columns=['Land Cover', 'Soil Type'])
+
+# Prepare features and target
+X = df_encoded.drop(columns=['Flood Occurred', 'Latitude', 'Longitude'])
+y = df_encoded['Flood Occurred']
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Scale the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("\n=== Random Forest Model ===")
+# Train the Random Forest model with hyperparameter tuning
+rf_param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [None, 10, 20],
+    'min_samples_split': [2, 5]
+}
+
+rf_grid = GridSearchCV(
+    RandomForestClassifier(random_state=42),
+    rf_param_grid,
+    cv=3,
+    scoring='accuracy',
+    verbose=1,
+    n_jobs=-1
+)
+
+rf_grid.fit(X_train_scaled, y_train)
+print(f"Best RF parameters: {rf_grid.best_params_}")
+
+# Use the best Random Forest model
+rf_model = rf_grid.best_estimator_
+
+# Predict on the test set
+y_pred_rf = rf_model.predict(X_test_scaled)
+
+# Evaluate the Random Forest model
+rf_accuracy = accuracy_score(y_test, y_pred_rf)
+print(f"Random Forest Accuracy: {rf_accuracy * 100:.2f}%")
+print("Random Forest Classification Report:")
+print(classification_report(y_test, y_pred_rf))
+
+# Get feature importances
+feature_importances = pd.DataFrame({
+    'Feature': X.columns,
+    'Importance': rf_model.feature_importances_
+}).sort_values('Importance', ascending=False)
+
+print("\nTop 10 Important Features:")
+print(feature_importances.head(10))
+
+# Predict probabilities for the entire dataset
+X_all_scaled = scaler.transform(X)
+df['RF_Probability'] = rf_model.predict_proba(X_all_scaled)[:, 1]
+df['RF_Prediction'] = rf_model.predict(X_all_scaled)
+
+print("\n=== MLP Model (Independent) ===")
+# Train the MLP model independently
+print("\n=== Performing Grid Search for MLP ===")
+# Modify your MLP parameter grid to allow more iterations and try different learning rates
+mlp_param_grid = {
+    'hidden_layer_sizes': [(100,), (200,), (100, 50)],
+    'activation': ['relu', 'tanh'],
+    'solver': ['adam'],
+    'max_iter': [2000],  # Increase from 1000 to 2000
+    'learning_rate': ['constant', 'adaptive'],
+    'alpha': [0.0001, 0.001],  # Add regularization parameter
+    'early_stopping': [True],  # Add early stopping
+    'validation_fraction': [0.1]  # Use 10% of training data for validation
+}
+# Create MLPClassifier
+mlp = MLPClassifier(random_state=42)
+
+# Create GridSearchCV
+mlp_grid = GridSearchCV(
+    mlp, 
+    mlp_param_grid, 
+    cv=3, 
+    scoring='accuracy',
+    verbose=1,
+    n_jobs=-1
+)
+
+print("\nStarting MLP Grid Search...")
+mlp_grid.fit(X_train_scaled, y_train)
+
+# Print results
+print("\n=== MLP Grid Search Results ===")
+print("Best parameters found:", mlp_grid.best_params_)
+print("Best accuracy score: {:.4f}".format(mlp_grid.best_score_))
+
+# Use the best MLP model
+mlp_model = mlp_grid.best_estimator_
+
+# Evaluate the independent MLP model
+y_pred_mlp = mlp_model.predict(X_test_scaled)
+mlp_accuracy = accuracy_score(y_test, y_pred_mlp)
+print(f"MLP Accuracy: {mlp_accuracy * 100:.2f}%")
+print("MLP Classification Report:")
+print(classification_report(y_test, y_pred_mlp))
+
+# Add MLP predictions to the dataset
+df['MLP_Probability'] = mlp_model.predict_proba(X_all_scaled)[:, 1]
+df['MLP_Prediction'] = mlp_model.predict(X_all_scaled)
+
+# Print confusion between models
+agreement = (df['RF_Prediction'] == df['MLP_Prediction']).mean() * 100
+print(f"\nModels agree on {agreement:.2f}% of predictions")
+
+# === Model Ensemble (RF + MLP) ===
+print("\n=== Ensemble Model ===")
+# Create ensemble predictions (average of probabilities)
+df['Ensemble_Probability'] = (df['RF_Probability'] + df['MLP_Probability']) / 2
+df['Ensemble_Prediction'] = df['Ensemble_Probability'].apply(lambda x: 1 if x > 0.5 else 0)
+
+# Calculate ensemble accuracy on test set
+# First, get the test indices
+_, X_test_idx = train_test_split(range(len(X)), test_size=0.2, random_state=42)
+test_df = df.iloc[X_test_idx]
+
+ensemble_accuracy = accuracy_score(test_df['Flood Occurred'], test_df['Ensemble_Prediction'])
+print(f"Ensemble Model Accuracy: {ensemble_accuracy * 100:.2f}%")
+print("Ensemble Classification Report:")
+print(classification_report(test_df['Flood Occurred'], test_df['Ensemble_Prediction']))
+
+# === MLP with RF predictions as features ===
+print("\n=== MLP with RF Predictions as Features ===")
+# Create a new feature set that includes RF predictions
+X_combined = X.copy()
+X_combined['RF_Probability'] = df['RF_Probability']
+
+# Split the data again
+X_train_combined, X_test_combined, y_train_combined, y_test_combined = train_test_split(
+    X_combined, y, test_size=0.2, random_state=42
+)
+
+# Scale the features
+scaler_combined = StandardScaler()
+X_train_combined_scaled = scaler_combined.fit_transform(X_train_combined)
+X_test_combined_scaled = scaler_combined.transform(X_test_combined)
+
+# Train the MLP model with RF predictions as features
+mlp_combined = MLPClassifier(**mlp_grid.best_params_, random_state=42)
+mlp_combined.fit(X_train_combined_scaled, y_train_combined)
+
+# Evaluate the combined model
+y_pred_combined = mlp_combined.predict(X_test_combined_scaled)
+combined_accuracy = accuracy_score(y_test_combined, y_pred_combined)
+print(f"MLP with RF Features Accuracy: {combined_accuracy * 100:.2f}%")
+print("Combined Model Classification Report:")
+print(classification_report(y_test_combined, y_pred_combined))
+
+# Add combined model predictions to the dataset
+X_all_combined = X_combined.copy()
+X_all_combined_scaled = scaler_combined.transform(X_all_combined)
+df['Combined_Probability'] = mlp_combined.predict_proba(X_all_combined_scaled)[:, 1]
+df['Combined_Prediction'] = mlp_combined.predict(X_all_combined_scaled)
+
+# Save the updated dataset with all predictions
+df.to_csv('flood_risk_dataset_india_with_all_predictions.csv', index=False)
+
+# === Visualization ===
+# Create flood risk hotspot map
+hotspots = df[df['Ensemble_Prediction'] == 1]
+print(f"\nNumber of identified hotspots: {len(hotspots)}")
+
+# Map of all places marked as hotspots by the ensemble model
+map_center = [df['Latitude'].mean(), df['Longitude'].mean()]
+my_map = folium.Map(location=map_center, zoom_start=5)
+
+# Add a marker cluster for hotspots
+hotspot_cluster = MarkerCluster(name="Flood Hotspots").add_to(my_map)
+
+for _, row in hotspots.iterrows():
+    popup_text = f"""
+    <b>Location:</b> {row['Latitude']:.4f}, {row['Longitude']:.4f}<br>
+    <b>Rainfall:</b> {row['Rainfall (mm)']} mm<br>
+    <b>Temperature:</b> {row['Temperature (°C)']} °C<br>
+    <b>Humidity:</b> {row['Humidity (%)']}%<br>
+    <b>Water Level:</b> {row['Water Level (m)']} m<br>
+    <b>Elevation:</b> {row['Elevation (m)']} m<br>
+    <b>RF Probability:</b> {row['RF_Probability']:.2f}<br>
+    <b>MLP Probability:</b> {row['MLP_Probability']:.2f}<br>
+    <b>Ensemble Probability:</b> {row['Ensemble_Probability']:.2f}
+    """
+    
+    folium.Marker(
+        location=[row['Latitude'], row['Longitude']],
+        popup=folium.Popup(popup_text, max_width=300),
+        icon=folium.Icon(color='red', icon='info-sign')
+    ).add_to(hotspot_cluster)
+
+# Add a heatmap layer - Fix for the error by making sure all values are properly formatted
+# Convert the data to a list of lists with proper formatting
+heat_data = []
+for _, row in df.iterrows():
+    try:
+        # Ensure all values are numeric and properly formatted
+        lat = float(row['Latitude'])
+        lon = float(row['Longitude'])
+        weight = float(row['Ensemble_Probability'])
+        heat_data.append([lat, lon, weight])
+    except (ValueError, TypeError) as e:
+        print(f"Skipping invalid data point: {e}")
+
+# Create the heatmap with the properly formatted data
+HeatMap(
+    data=heat_data,
+    radius=15,
+    max_zoom=13,
+    gradient={0.4: 'blue', 0.65: 'yellow', 0.9: 'red'},
+    name='Heat Map'
+).add_to(my_map)
+
+# Add layer control
+folium.LayerControl().add_to(my_map)
+
+# Save the map
+try:
+    my_map.save('flood_risk_hotspots_map.html')
+    print("\nMap saved as 'flood_risk_hotspots_map.html'")
+except Exception as e:
+    print(f"Error saving map: {e}")
+    # Alternative simple map without heatmap as fallback
+    simple_map = folium.Map(location=map_center, zoom_start=5)
+    for _, row in hotspots.head(100).iterrows():  # Limit to first 100 for simplicity
+        folium.Marker(
+            location=[row['Latitude'], row['Longitude']],
+            popup=f"Probability: {row['Ensemble_Probability']:.2f}"
+        ).add_to(simple_map)
+    simple_map.save('simple_hotspots_map.html')
+    print("Saved simplified map as 'simple_hotspots_map.html'")
+
+# Visualize model performance comparison
+models = ['Random Forest', 'MLP', 'Ensemble', 'Combined MLP']
+accuracies = [rf_accuracy * 100, mlp_accuracy * 100, ensemble_accuracy * 100, combined_accuracy * 100]
+
+plt.figure(figsize=(10, 6))
+bars = plt.bar(models, accuracies, color=['green', 'blue', 'purple', 'orange'])
+
+# Add accuracy values on top of bars
+for bar in bars:
+    height = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+             f'{height:.2f}%', ha='center', va='bottom')
+
+plt.xlabel('Models')
+plt.ylabel('Accuracy (%)')
+plt.title('Model Performance Comparison')
+plt.ylim(0, 100)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.savefig('model_comparison.png')
+plt.close()
+
+print("Performance comparison chart saved as 'model_comparison.png'")
+
+# Feature importance visualization
+plt.figure(figsize=(12, 8))
+sns.barplot(x='Importance', y='Feature', data=feature_importances.head(10))
+plt.title('Top 10 Important Features for Flood Prediction')
+plt.tight_layout()
+plt.savefig('feature_importance.png')
+plt.close()
+
+print("Feature importance chart saved as 'feature_importance.png'")
+
+# Try different model approach to improve low accuracy
+print("\n=== Trying Different Model Approach ===")
+
+# Let's try different features selection based on importance
+top_features = feature_importances.head(15)['Feature'].tolist()
+print(f"Using top {len(top_features)} features for improved model")
+
+X_top = X[top_features]
+
+# Split data using top features
+X_train_top, X_test_top, y_train_top, y_test_top = train_test_split(
+    X_top, y, test_size=0.2, random_state=42
+)
+
+# Scale features
+scaler_top = StandardScaler()
+X_train_top_scaled = scaler_top.fit_transform(X_train_top)
+X_test_top_scaled = scaler_top.transform(X_test_top)
+
+# Try a different RandomForest configuration
+rf_top = RandomForestClassifier(
+    n_estimators=500,  # More trees
+    max_depth=None,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    max_features='sqrt',
+    bootstrap=True,
+    class_weight='balanced',  # Handle class imbalance
+    random_state=42
+)
+
+rf_top.fit(X_train_top_scaled, y_train_top)
+y_pred_top = rf_top.predict(X_test_top_scaled)
+top_accuracy = accuracy_score(y_test_top, y_pred_top)
+
+print(f"Improved Random Forest Accuracy: {top_accuracy * 100:.2f}%")
+print("Improved Random Forest Classification Report:")
+print(classification_report(y_test_top, y_pred_top))
+
+# Add improved model predictions to dataset
+X_all_top = X_top.copy()
+X_all_top_scaled = scaler_top.transform(X_all_top)
+df['Improved_RF_Probability'] = rf_top.predict_proba(X_all_top_scaled)[:, 1]
+df['Improved_RF_Prediction'] = rf_top.predict(X_all_top_scaled)
+
+# Update final CSV with all predictions
+df.to_csv('flood_risk_dataset_india_with_all_improved_predictions.csv', index=False)
+
+# Create a final ensemble with all models
+print("\n=== Final Ensemble of All Models ===")
+df['Final_Ensemble_Probability'] = (
+    df['RF_Probability'] + 
+    df['MLP_Probability'] + 
+    df['Combined_Probability'] + 
+    df['Improved_RF_Probability']
+) / 4
+
+df['Final_Ensemble_Prediction'] = df['Final_Ensemble_Probability'].apply(lambda x: 1 if x > 0.5 else 0)
+
+test_df = df.iloc[X_test_idx]
+
+# Calculate final ensemble accuracy on test set
+final_ensemble_accuracy = accuracy_score(test_df['Flood Occurred'], test_df['Final_Ensemble_Prediction'])
+print(f"Final Ensemble Model Accuracy: {final_ensemble_accuracy * 100:.2f}%")
+print("Final Ensemble Classification Report:")
+print(classification_report(test_df['Flood Occurred'], test_df['Final_Ensemble_Prediction']))
+
+# Add final model comparison
+models.append('Improved RF')
+models.append('Final Ensemble')
+accuracies.append(top_accuracy * 100)
+accuracies.append(final_ensemble_accuracy * 100)
+
+plt.figure(figsize=(12, 6))
+bars = plt.bar(models, accuracies, color=['green', 'blue', 'purple', 'orange', 'red', 'brown'])
+
+# Add accuracy values on top of bars
+for bar in bars:
+    height = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+             f'{height:.2f}%', ha='center', va='bottom')
+
+plt.xlabel('Models')
+plt.ylabel('Accuracy (%)')
+plt.title('Final Model Performance Comparison')
+plt.ylim(0, 100)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.savefig('final_model_comparison.png')
+plt.close()
+
+print("\nFinal performance comparison chart saved as 'final_model_comparison.png'")
+print("\nAll models have been trained and evaluated. Please check the saved CSV and visualizations.")

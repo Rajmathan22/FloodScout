@@ -1,0 +1,21 @@
+Rainfall (mm),Temperature (°C),Humidity (%),Water Level (m),Elevation (m),Land Cover,Soil Type,Latitude,Longitude,Flood Occurred
+152,28,85,3.8,12,Urban,Clay,19.0760,72.8777,1
+89,32,65,1.2,85,Forest,Sandy,28.6139,77.2090,0
+210,27,90,4.5,8,Agricultural,Loamy,13.0827,80.2707,1
+45,35,40,0.8,125,Grassland,Rocky,17.3850,78.4867,0
+188,29,80,3.2,15,Urban,Clay,12.9716,77.5946,1
+120,31,70,2.5,35,Agricultural,Loamy,22.5726,88.3639,0
+230,26,95,5.1,5,Wetland,Peat,8.5241,76.9366,1
+78,33,60,1.5,95,Forest,Sandy,26.9124,75.7873,0
+195,28,85,4.2,18,Agricultural,Clay,23.0225,72.5714,1
+110,30,75,2.8,42,Urban,Clay,18.5204,73.8567,0
+168,29,82,3.6,22,Agricultural,Loamy,22.6917,79.3999,1
+92,31,68,1.8,78,Forest,Sandy,26.1445,91.7362,0
+215,27,88,4.8,7,Wetland,Peat,9.9312,78.1197,1
+72,34,55,1.1,105,Grassland,Rocky,25.2048,75.8408,0
+180,28,84,3.9,14,Urban,Clay,11.0168,76.9558,1
+105,31,72,2.3,45,Agricultural,Loamy,21.1702,72.8311,0
+225,26,92,4.7,6,Wetland,Peat,10.8505,79.1561,1
+85,32,63,1.6,82,Forest,Sandy,27.1767,78.0081,0
+190,28,83,4.0,16,Urban,Clay,13.0827,80.2707,1
+100,31,74,2.0,48,Agricultural,Loamy,17.6868,83.2185,0

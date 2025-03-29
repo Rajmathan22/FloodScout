@@ -1,0 +1,457 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .model-card {
+        transition: transform 0.3s ease;
+    }
+    .model-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-card {
+        border-left: 4px solid var(--bs-info);
+    }
+    .map-container {
+        height: 600px;
+        width: 100%;
+    }
+    #map-frame {
+        width: 100%;
+        height: 100%;
+        border: none;
+        border-radius: 8px;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin-bottom: 20px;
+    }
+    .zoom-icon {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.5);
+        color: white;
+        border-radius: 50%;
+        padding: 8px;
+        cursor: pointer;
+        z-index: 100;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Flood Risk Analysis Dashboard</h1>
+                <div>
+                    <button id="download-btn" class="btn btn-success">
+                        <i class="fas fa-download me-2"></i>Download Results
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="row mb-4">
+        {% if model_results.advanced_ensemble_accuracy is defined %}
+        <!-- Advanced models are available, show both basic and advanced metrics -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">Base Models</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">Random Forest</h6>
+                        <h5 class="mb-0">{{ "%.2f"|format(model_results.rf_accuracy * 100) }}%</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">MLP Network</h6>
+                        <h5 class="mb-0">{{ "%.2f"|format(model_results.mlp_accuracy * 100) }}%</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="text-muted mb-0">Basic Ensemble</h6>
+                        <h5 class="mb-0">{{ "%.2f"|format(model_results.ensemble_accuracy * 100) }}%</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">Advanced Models</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">Improved RF</h6>
+                        <h5 class="mb-0">{{ "%.2f"|format(model_results.improved_rf_accuracy * 100) }}%</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">Combined MLP</h6>
+                        <h5 class="mb-0">{{ "%.2f"|format(model_results.combined_mlp_accuracy * 100) }}%</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="text-muted mb-0">Advanced Ensemble</h6>
+                        <h5 class="mb-0 text-primary fw-bold">{{ "%.2f"|format(model_results.advanced_ensemble_accuracy * 100) }}%</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">Analysis Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">Flood Risk Areas</h6>
+                        <h5 class="mb-0">{{ model_results.advanced_ensemble_predictions.count(1) }}</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">Best Model</h6>
+                        <h5 class="mb-0">Advanced Ensemble</h5>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="text-muted mb-0">Accuracy Improvement</h6>
+                        {% set improvement = (model_results.advanced_ensemble_accuracy - model_results.ensemble_accuracy) * 100 %}
+                        <h5 class="mb-0 {% if improvement > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ "%.2f"|format(improvement) }}%
+                        </h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <!-- Only basic models are available -->
+        <div class="col-md-3 mb-4 mb-md-0">
+            <div class="card stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">RF Model Accuracy</h6>
+                            <h2 class="mb-0">{{ "%.2f"|format(model_results.rf_accuracy * 100) }}%</h2>
+                        </div>
+                        <div class="text-info">
+                            <i class="fas fa-chart-simple fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4 mb-md-0">
+            <div class="card stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">MLP Model Accuracy</h6>
+                            <h2 class="mb-0">{{ "%.2f"|format(model_results.mlp_accuracy * 100) }}%</h2>
+                        </div>
+                        <div class="text-info">
+                            <i class="fas fa-brain fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4 mb-md-0">
+            <div class="card stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Ensemble Accuracy</h6>
+                            <h2 class="mb-0">{{ "%.2f"|format(model_results.ensemble_accuracy * 100) }}%</h2>
+                        </div>
+                        <div class="text-info">
+                            <i class="fas fa-layer-group fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Flood Risk Areas</h6>
+                            <h2 class="mb-0" id="flood-risk-count">{{ model_results.ensemble_predictions.count(1) }}</h2>
+                        </div>
+                        <div class="text-info">
+                            <i class="fas fa-water fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Main Content Row -->
+    <div class="row">
+        <!-- Left Column -->
+        <div class="col-lg-8">
+            <!-- Map Section -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-map-marker-alt me-2"></i>Flood Risk Map
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="map-container">
+                        {% if map_path %}
+                        <iframe id="map-frame" src="{{ url_for('static', filename=map_path) }}"></iframe>
+                        {% else %}
+                        <div class="d-flex justify-content-center align-items-center h-100 bg-light">
+                            <div class="text-center">
+                                <i class="fas fa-map-marked-alt fa-4x text-muted mb-3"></i>
+                                <h5>Map Visualization Not Available</h5>
+                                <p class="text-muted">Location data is required for map generation.</p>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model Comparison Chart -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>Model Performance Comparison
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div class="zoom-icon" data-bs-toggle="modal" data-bs-target="#chartModal" data-chart="performanceChart">
+                            <i class="fas fa-search-plus"></i>
+                        </div>
+                        <img src="{{ visualization_paths.performance_chart }}" alt="Model Performance Comparison" class="img-fluid" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="col-lg-4">
+            <!-- Feature Importance -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list-ol me-2"></i>Feature Importance
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div class="zoom-icon" data-bs-toggle="modal" data-bs-target="#chartModal" data-chart="featureChart">
+                            <i class="fas fa-search-plus"></i>
+                        </div>
+                        <img src="{{ visualization_paths.feature_importance }}" alt="Feature Importance" class="img-fluid" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Probability Distribution -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-line me-2"></i>Probability Distribution
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div class="zoom-icon" data-bs-toggle="modal" data-bs-target="#chartModal" data-chart="distributionChart">
+                            <i class="fas fa-search-plus"></i>
+                        </div>
+                        <img src="{{ visualization_paths.probability_distribution }}" alt="Probability Distribution" class="img-fluid" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+            
+            {% if visualization_paths.model_comparison is defined %}
+            <!-- Model Comparison Distribution -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-pie me-2"></i>Model Comparison
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div class="zoom-icon" data-bs-toggle="modal" data-bs-target="#chartModal" data-chart="modelComparisonChart">
+                            <i class="fas fa-search-plus"></i>
+                        </div>
+                        <img src="{{ visualization_paths.model_comparison }}" alt="Model Distribution Comparison" class="img-fluid" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Data Sample Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card mb-4">
+                <div class="card-header bg-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-table me-2"></i>Data Sample with Predictions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    {% for key in data_sample[0].keys() %}
+                                    <th>{{ key }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in data_sample %}
+                                <tr>
+                                    {% for key, value in row.items() %}
+                                    <td>{{ value }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Modal -->
+<div class="modal fade" id="chartModal" tabindex="-1" aria-labelledby="chartModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chartModalLabel">Chart View</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modal-chart" src="" alt="Chart" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Download Modal -->
+<div class="modal fade" id="downloadModal" tabindex="-1" aria-labelledby="downloadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="downloadModalLabel">Download Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="download-progress" class="d-none">
+                    <p>Preparing your download...</p>
+                    <div class="progress mb-3">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div id="download-success" class="d-none">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-check-circle text-success fa-4x"></i>
+                        <h4 class="mt-3">Your file is ready!</h4>
+                    </div>
+                    <p>Your results have been processed and are ready to download.</p>
+                </div>
+                <div id="download-error" class="d-none">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-times-circle text-danger fa-4x"></i>
+                        <h4 class="mt-3">Error</h4>
+                    </div>
+                    <p id="error-message">An error occurred while preparing your download.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a id="download-link" href="#" class="btn btn-primary d-none">Download CSV</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Chart modal functionality
+        const chartModal = document.getElementById('chartModal');
+        const modalChart = document.getElementById('modal-chart');
+        
+        chartModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const chartType = button.getAttribute('data-chart');
+            
+            // Set the appropriate image source based on chart type
+            if (chartType === 'performanceChart') {
+                modalChart.src = "{{ visualization_paths.performance_chart }}";
+                document.getElementById('chartModalLabel').textContent = 'Model Performance Comparison';
+            } else if (chartType === 'featureChart') {
+                modalChart.src = "{{ visualization_paths.feature_importance }}";
+                document.getElementById('chartModalLabel').textContent = 'Feature Importance';
+            } else if (chartType === 'distributionChart') {
+                modalChart.src = "{{ visualization_paths.probability_distribution }}";
+                document.getElementById('chartModalLabel').textContent = 'Probability Distribution';
+            } {% if visualization_paths.model_comparison is defined %} else if (chartType === 'modelComparisonChart') {
+                modalChart.src = "{{ visualization_paths.model_comparison }}";
+                document.getElementById('chartModalLabel').textContent = 'Model Probability Distribution Comparison';
+            } {% endif %}
+        });
+        
+        // Download functionality
+        const downloadBtn = document.getElementById('download-btn');
+        const downloadModal = new bootstrap.Modal(document.getElementById('downloadModal'));
+        const downloadProgress = document.getElementById('download-progress');
+        const downloadSuccess = document.getElementById('download-success');
+        const downloadError = document.getElementById('download-error');
+        const downloadLink = document.getElementById('download-link');
+        const errorMessage = document.getElementById('error-message');
+        
+        downloadBtn.addEventListener('click', function() {
+            // Show modal and progress
+            downloadModal.show();
+            downloadProgress.classList.remove('d-none');
+            downloadSuccess.classList.add('d-none');
+            downloadError.classList.add('d-none');
+            downloadLink.classList.add('d-none');
+            
+            // Call download API
+            fetch('/download_results')
+                .then(response => response.json())
+                .then(data => {
+                    downloadProgress.classList.add('d-none');
+                    
+                    if (data.success) {
+                        // Show success and download link
+                        downloadSuccess.classList.remove('d-none');
+                        downloadLink.classList.remove('d-none');
+                        downloadLink.href = data.download_url;
+                    } else {
+                        // Show error
+                        downloadError.classList.remove('d-none');
+                        errorMessage.textContent = data.error || 'An error occurred while preparing your download.';
+                    }
+                })
+                .catch(error => {
+                    // Show error
+                    downloadProgress.classList.add('d-none');
+                    downloadError.classList.remove('d-none');
+                    errorMessage.textContent = 'Network error occurred. Please try again.';
+                    console.error('Error:', error);
+                });
+        });
+    });
+</script>
+{% endblock %}

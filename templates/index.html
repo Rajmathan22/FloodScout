@@ -1,0 +1,373 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .upload-box {
+        border: 2px dashed var(--bs-info);
+        border-radius: 10px;
+        padding: 40px;
+        text-align: center;
+        transition: all 0.3s ease;
+        margin-bottom: 30px;
+    }
+    .upload-box:hover, .upload-box.drag-over {
+        border-color: var(--bs-primary);
+        background-color: rgba(var(--bs-info-rgb), 0.1);
+    }
+    .upload-icon {
+        font-size: 4rem;
+        color: var(--bs-info);
+        margin-bottom: 20px;
+    }
+    .hero-section {
+        padding: 60px 0;
+        background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), 
+                  url('https://images.unsplash.com/photo-1559825481-12a05cc00344?w=1200') no-repeat center center;
+        background-size: cover;
+        color: white;
+        margin-bottom: 40px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero-section">
+    <div class="container text-center">
+        <h1 class="display-4 mb-4">GeoGuard Flood Risk Prediction</h1>
+        <p class="lead mb-4">
+            Upload your geographic data to predict flood risk areas using our advanced machine learning models.
+        </p>
+    </div>
+</section>
+
+<!-- Main Content -->
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <!-- Upload Section -->
+            <div class="card shadow">
+                <div class="card-header bg-dark">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-upload me-2"></i>Upload Your Data
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data" id="upload-form">
+                        <div class="upload-box" id="drop-area">
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                            <h4>Drag & Drop or Click to Upload</h4>
+                            <p class="text-muted">Supported formats: .xlsx, .xls, .csv</p>
+                            <input type="file" name="file" id="file-input" accept=".xlsx,.xls,.csv" class="d-none">
+                            <button type="button" class="btn btn-info mt-3" id="browse-button">
+                                <i class="fas fa-folder-open me-2"></i>Browse Files
+                            </button>
+                        </div>
+                        
+                        <div id="file-details" class="mb-4 d-none">
+                            <div class="alert alert-info">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-file-excel me-3" style="font-size: 2rem;"></i>
+                                    <div>
+                                        <h5 class="mb-1" id="file-name">filename.xlsx</h5>
+                                        <p class="mb-0 text-muted" id="file-size">Size: 0 KB</p>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="remove-file">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card bg-light mb-4">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-info-circle me-2"></i>Required Data Format
+                                </h5>
+                                <p class="card-text">Your data should include the following columns:</p>
+                                <ul>
+                                    <li><strong>Flood Occurred</strong> (0 or 1) - Target variable</li>
+                                    <li><strong>Rainfall (mm)</strong> - Precipitation measurement</li>
+                                    <li><strong>Temperature (°C)</strong> - Temperature measurement</li>
+                                    <li><strong>Humidity (%)</strong> - Humidity percentage</li>
+                                    <li><strong>Water Level (m)</strong> - Water level measurement</li>
+                                    <li><strong>Elevation (m)</strong> - Elevation data</li>
+                                    <li><strong>Land Cover</strong> - Categorical land cover type</li>
+                                    <li><strong>Soil Type</strong> - Categorical soil type</li>
+                                    <li><strong>Latitude</strong> and <strong>Longitude</strong> (for map visualization)</li>
+                                </ul>
+                                <div class="mt-3">
+                                    <a href="{{ url_for('static', filename='sample_data/flood_risk_dataset_sample.csv') }}" class="btn btn-sm btn-info" download>
+                                        <i class="fas fa-download me-1"></i> Download Sample Dataset
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg px-5" id="upload-button" disabled>
+                                <i class="fas fa-analyze me-2"></i>Analyze Data
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Processing Modal -->
+            <div class="modal fade" id="processingModal" tabindex="-1" aria-labelledby="processingModalLabel" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="processingModalLabel">
+                                <i class="fas fa-spinner fa-spin me-2"></i>Processing Your Data
+                            </h5>
+                        </div>
+                        <div class="modal-body text-center">
+                            <div class="mb-4">
+                                <div class="progress" style="height: 25px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" id="progress-bar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                                </div>
+                            </div>
+                            
+                            <div id="processing-steps">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>1. Data validation</span>
+                                    <span id="step1-status"><i class="fas fa-circle-notch fa-spin text-info"></i></span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>2. Data preprocessing</span>
+                                    <span id="step2-status"><i class="fas fa-circle text-secondary"></i></span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>3. Training Random Forest model</span>
+                                    <span id="step3-status"><i class="fas fa-circle text-secondary"></i></span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>4. Training MLP model</span>
+                                    <span id="step4-status"><i class="fas fa-circle text-secondary"></i></span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>5. Generating visualizations</span>
+                                    <span id="step5-status"><i class="fas fa-circle text-secondary"></i></span>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span>6. Creating interactive map</span>
+                                    <span id="step6-status"><i class="fas fa-circle text-secondary"></i></span>
+                                </div>
+                            </div>
+                            
+                            <p class="mt-4 text-muted">This process may take a few minutes depending on your data size.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- How It Works Section -->
+            <div class="row mt-5">
+                <div class="col-12">
+                    <h2 class="text-center mb-4">How It Works</h2>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-info">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-upload fa-3x text-info"></i>
+                            </div>
+                            <h5 class="card-title">1. Upload Your Data</h5>
+                            <p class="card-text">Upload your geographic and environmental data in Excel or CSV format.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-info">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-cogs fa-3x text-info"></i>
+                            </div>
+                            <h5 class="card-title">2. AI Processing</h5>
+                            <p class="card-text">Our machine learning models analyze patterns to identify potential flood risk areas.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-info">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-chart-line fa-3x text-info"></i>
+                            </div>
+                            <h5 class="card-title">3. Visualized Results</h5>
+                            <p class="card-text">Get interactive maps, charts, and downloadable reports with flood risk predictions.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const browseButton = document.getElementById('browse-button');
+        const uploadButton = document.getElementById('upload-button');
+        const fileDetails = document.getElementById('file-details');
+        const fileName = document.getElementById('file-name');
+        const fileSize = document.getElementById('file-size');
+        const removeFile = document.getElementById('remove-file');
+        const uploadForm = document.getElementById('upload-form');
+        const processingModal = new bootstrap.Modal(document.getElementById('processingModal'));
+        
+        // Browse button click
+        browseButton.addEventListener('click', function() {
+            fileInput.click();
+        });
+        
+        // File input change
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+        
+        // Drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('drag-over');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('drag-over');
+        }
+        
+        // Handle dropped files
+        dropArea.addEventListener('drop', function(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        });
+        
+        // Handle files
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                
+                // Validate file type
+                const validTypes = ['.xlsx', '.xls', '.csv'];
+                const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                
+                if (!validTypes.includes(fileExtension)) {
+                    alert('Please upload a valid Excel or CSV file');
+                    return;
+                }
+                
+                // Show file details
+                fileName.textContent = file.name;
+                fileSize.textContent = `Size: ${formatFileSize(file.size)}`;
+                fileDetails.classList.remove('d-none');
+                uploadButton.removeAttribute('disabled');
+            }
+        }
+        
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Remove file
+        removeFile.addEventListener('click', function() {
+            fileInput.value = '';
+            fileDetails.classList.add('d-none');
+            uploadButton.setAttribute('disabled', 'disabled');
+        });
+        
+        // Form submission
+        uploadForm.addEventListener('submit', function(e) {
+            if (fileInput.files.length === 0) {
+                e.preventDefault();
+                alert('Please select a file to upload');
+                return;
+            }
+            
+            // Show processing modal
+            processingModal.show();
+            
+            // Simulate progress (in a real app, this would be based on actual backend progress)
+            simulateProgress();
+        });
+        
+        // Simulated progress function
+        function simulateProgress() {
+            let progress = 0;
+            const progressBar = document.getElementById('progress-bar');
+            const step1 = document.getElementById('step1-status');
+            const step2 = document.getElementById('step2-status');
+            const step3 = document.getElementById('step3-status');
+            const step4 = document.getElementById('step4-status');
+            const step5 = document.getElementById('step5-status');
+            const step6 = document.getElementById('step6-status');
+            
+            const steps = [step1, step2, step3, step4, step5, step6];
+            
+            const interval = setInterval(function() {
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    return;
+                }
+                
+                progress += 5;
+                if (progress > 100) progress = 100;
+                
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = progress + '%';
+                progressBar.setAttribute('aria-valuenow', progress);
+                
+                // Update step statuses
+                if (progress >= 15) {
+                    steps[0].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                    steps[1].innerHTML = '<i class="fas fa-circle-notch fa-spin text-info"></i>';
+                }
+                if (progress >= 30) {
+                    steps[1].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                    steps[2].innerHTML = '<i class="fas fa-circle-notch fa-spin text-info"></i>';
+                }
+                if (progress >= 50) {
+                    steps[2].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                    steps[3].innerHTML = '<i class="fas fa-circle-notch fa-spin text-info"></i>';
+                }
+                if (progress >= 70) {
+                    steps[3].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                    steps[4].innerHTML = '<i class="fas fa-circle-notch fa-spin text-info"></i>';
+                }
+                if (progress >= 85) {
+                    steps[4].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                    steps[5].innerHTML = '<i class="fas fa-circle-notch fa-spin text-info"></i>';
+                }
+                if (progress >= 100) {
+                    steps[5].innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                }
+            }, 200);
+        }
+    });
+</script>
+{% endblock %}
